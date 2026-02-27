@@ -35,7 +35,7 @@ qemu-system-riscv64 -M virt -s -S -nographic
 
 最方便的办法，是通过 gdb 来反向定位源码。QEMU 源码中充斥各种 C 宏魔法，对于刚接触 QEMU 的人来说，看起来会有一些吃力，使用 gdb 调试，可以更有针对性分析我们关注的部分，抽丝剥茧，层层拨开 QEMU 源码的神秘面纱。
 
-按照前面 QOM 的讲解，virt Machine 也是一个 QOM `Object`（而不是 QAPI 的 `QObject`），我们可以在它的 class 初始化或者对象实例化的源码位置，打一个断点，来观察调用栈。这里我们先搜索一下 virt Machine 源码里关于 typeinfo 相关的代码：
+virt Machine 是一个 QEMU 的 QOM `Object`（下一章节会讲），我们可以在它的 class 初始化或者对象实例化的源码位置，打一个断点，来观察调用栈。这里我们先搜索一下 virt Machine 源码里关于 typeinfo 相关的代码：
 
 ```c
 static const TypeInfo virt_machine_typeinfo = {
