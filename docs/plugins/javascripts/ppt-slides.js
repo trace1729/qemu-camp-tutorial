@@ -486,6 +486,8 @@
             if (idx === clamped) {
                 slide.classList.add("is-active");
                 slide.setAttribute("aria-hidden", "false");
+                slide.scrollTop = 0;
+                slide.scrollLeft = 0;
             } else {
                 slide.classList.remove("is-active");
                 slide.setAttribute("aria-hidden", "true");
