@@ -193,6 +193,13 @@
     font-size: inherit;
 }
 
+.ppt-slide table,
+.ppt-slide table:not([class]),
+.ppt-slide th,
+.ppt-slide td {
+    font-size: .768rem !important;
+}
+
 .ppt-counter {
     position: absolute;
     bottom: 1rem;
