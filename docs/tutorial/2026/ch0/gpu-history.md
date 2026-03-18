@@ -178,7 +178,7 @@ SM 中通常有数十个活跃 Warp 同时驻留，Warp 调度器决定每个周
 
 #### 记分板与操作数收集器
 
-**记分板（Scoreboard）**是 GPU 流水线中的依赖跟踪机制。对于生产者-消费者依赖（RAW），生产者指令在发射时递增计数器，在写回时递减；消费者指令在该计数器归零前必须等待。WAR 冲突的处理类似，但计数器在源操作数读取完成后递减。
+**记分板（Scoreboard）**是 GPU 流水线中的依赖跟踪机制。对于生产者 - 消费者依赖（RAW），生产者指令在发射时递增计数器，在写回时递减；消费者指令在该计数器归零前必须等待。WAR 冲突的处理类似，但计数器在源操作数读取完成后递减。
 
 **操作数收集器（Operand Collector）**解决了寄存器文件的带宽瓶颈。GPU 的寄存器文件通常被划分为 16 个 bank，当同一 Warp 的多个源操作数恰好落在同一 bank 时，会产生 bank 冲突并被串行化。操作数收集器充当缓冲，通过仲裁器（Arbiter）协调来自不同 Warp 的寄存器读请求，尽量将请求分散到不同 bank，从而隐藏 bank 冲突带来的延迟。
 
@@ -286,9 +286,9 @@ Pascal 是第一个面向深度学习时代的 GPU 架构，Tesla P100 带来了
 
 | 架构 | 年份 | 工艺 | 晶体管 | CUDA Core | 关键创新 | 代表产品 |
 |------|------|------|--------|-----------|---------|---------|
-| Tesla | 2006 | 90nm | 6.81 亿 | 128 | 统一着色器, CUDA | GeForce 8800 GTX |
+| Tesla | 2006 | 90nm | 6.81 亿 | 128 | 统一着色器，CUDA | GeForce 8800 GTX |
 | Fermi | 2010 | 40nm | 30 亿 | 512 | ECC, L1/L2 缓存 | GeForce GTX 480 |
-| Kepler | 2012 | 28nm | 71 亿 | 2880 | 动态并行, Hyper-Q | Tesla K40 |
+| Kepler | 2012 | 28nm | 71 亿 | 2880 | 动态并行，Hyper-Q | Tesla K40 |
 | Maxwell | 2014 | 28nm | — | 2048 | 能效革命 | GeForce GTX 980 |
 | Pascal | 2016 | 16nm | 150 亿 | 3584 | HBM2, NVLink, FP16 | Tesla P100 |
 | Volta | 2017 | 12nm | 211 亿 | 5120 | Tensor Core | Tesla V100 |
@@ -354,7 +354,7 @@ NVIDIA A100 GPU (SXM4 模块)
 - **MIG（Multi-Instance GPU）**：将一块 A100 最多分为 7 个隔离的 GPU 实例，每个实例拥有独立的内存、缓存和计算资源，适合多租户推理场景
 - TSMC 7nm 工艺，540 亿晶体管
 - 80 GB HBM2e 显存，2 TB/s 带宽
-- NVLink 3.0：12 条链路，总计 600 GB/s
+- NVLink 3.0:12 条链路，总计 600 GB/s
 
 #### Hopper 架构（2022）
 
@@ -368,7 +368,7 @@ NVIDIA H100 GPU (SXM5 模块)
 - **FP8 数据类型**：E4M3（范围 ±448）和 E5M2（范围 ±57344）两种格式，相比 FP16 性能提升 2 倍、内存需求减半
 - TSMC 4N 工艺，800 亿晶体管
 - 80 GB HBM3 显存，3 TB/s 带宽
-- NVLink 4.0：18 条链路，总计 900 GB/s
+- NVLink 4.0:18 条链路，总计 900 GB/s
 
 #### Blackwell 架构（2024）
 
@@ -377,7 +377,7 @@ NVIDIA H100 GPU (SXM5 模块)
 - **2080 亿晶体管**（双 die，单 die 1040 亿），TSMC 4NP 定制工艺
 - **第二代 Transformer Engine**：支持 FP4（4-bit 浮点）AI 推理，使用微张量缩放（micro-tensor scaling）技术优化精度
 - **B200 规格**：192 GB HBM3e，8 TB/s 带宽，FP4 推理 20 PFLOPS
-- NVLink 5.0：18 条链路，1.8 TB/s 带宽
+- NVLink 5.0:18 条链路，1.8 TB/s 带宽
 - **B300（Blackwell Ultra, 2025）**：288 GB HBM3e（12-high 堆叠），FP4 密集计算 14-15 PFLOPS
 
 #### Rubin 平台（2026）
