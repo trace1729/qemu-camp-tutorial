@@ -1,13 +1,24 @@
 # QEMU 训练营基础阶段 C 语言
-hello，欢迎各位来到qemu训练营。这是qemu训练营的起始，大家不如立一个flage，比如我一定要完成qemu训练营全部流程，不要半途而费。
+Hello，欢迎各位来到 QEMU 训练营。这是 QEMU 训练营的起始阶段，大家不如立一个 flag，比如“我一定要完成 QEMU 训练营全部流程，不要半途而废”。
 
-`qemu_camp_basic_c`[https://classroom.github.com/a/AgHjM77H] 是 QEMU 训练营基础阶段的 C 语言练习仓库，核心内容位于 `qemu_camp_basic_c/c_exercise` 目录。
+[qemu_camp_basic_c](https://classroom.github.com/a/AgHjM77H) 是通过 GitHub Classroom 发放的 QEMU 训练营基础阶段 C 语言练习仓库。
 
-这个题库把 OpenCamp 原有的基础阶段和专业阶段 C 题目整合成了一套连续编号的练习，共 `40` 题，适合按顺序完成，也适合按专题挑选训练。
+这个题库把 OpenCamp 原有的基础阶段和专业阶段 C 题目整合成了一套连续编号的练习，共 `40` 题。
 
-此文档不会过多的赘述语法细节，个人认为使用AI辅助语法学习效率奇高。如果你是0基础同学，可以和gpt，claude老师讨论学习。
+当前 C 语言部分的 GitHub Classroom 邀请链接是：
+
+- [https://classroom.github.com/a/AgHjM77H](https://classroom.github.com/a/AgHjM77H)
 
 ## 快速开始
+
+### 0. 一键配置基础环境
+
+如果你使用的是 Ubuntu / WSL2 Ubuntu 环境，可以先执行下面的命令，一次性安装做题所需的基础工具：
+
+```bash
+sudo apt update
+sudo apt install -y git gcc g++ make gdb clang-format jq curl pkg-config
+```
 
 ### 1. 进入目录
 
@@ -137,32 +148,16 @@ make watch
 
 ```bash
 # 在 qemu_camp_basic_c 目录执行
-make help
-make c-checker
-make list
-make check 01
-make check 15_url_parser
-make hint 15
-make check-all
-make watch
-make clean
+make help                 # 查看题库支持的全部命令
+make c-checker            # 编译 C 语言检查器
+make list                 # 列出全部题目及当前完成状态
+make check 01             # 检查编号为 01 的练习题
+make check 15_url_parser  # 检查指定名称的练习题
+make hint 15              # 查看编号为 15 的题目提示
+make check-all            # 检查全部练习题
+make watch                # 监听文件变化并自动重新检查
+make clean                # 清理检查器和构建产物
 ```
-
-## 学习建议
-
-### 推荐顺序
-
-1. 先完成 `01-10`，建立基础语法、数组、指针和简单数据结构能力
-2. 再完成 `11-20`，训练字符串处理、文件处理和模块化组织
-3. 最后进入 `21-40`，强化链表、树、位运算、宏、并发与系统编程思维
-
-### 做题建议
-
-- 优先保证程序可编译，再逐步修正逻辑
-- 先通过单题检查，再执行 `make check-all`
-- 多利用 `make hint <题号>` 查看方向提示
-- 遇到包含 `Makefile` 的题目，优先阅读题目目录下的实现组织方式
-- `20_mybash` 是相对完整的小项目，结构会比前面的单文件题更复杂
 
 ## 自动评测说明
 
@@ -174,14 +169,6 @@ make clean
 4. 在配置好 OpenCamp 所需 secrets 后回传成绩
 
 `pull_request` 场景一般只执行评测，不做成绩回传。
-
-## 相关文件
-
-- 题库说明：`qemu_camp_basic_c/c_exercise/README.md`
-- 顶层命令入口：`qemu_camp_basic_c/Makefile`
-- 题库主命令入口：`qemu_camp_basic_c/c_exercise/Makefile`
-- 单题运行脚本：`qemu_camp_basic_c/c_exercise/run.sh`
-- 持续检查脚本：`qemu_camp_basic_c/c_exercise/watch.sh`
 
 ## 一句话总结
 
