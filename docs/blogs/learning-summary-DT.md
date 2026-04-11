@@ -16,7 +16,7 @@
 |------|------|
 | 主机 | Windows（方便玩游戏） |
 | 开发机 | Linux VMware（方便配开发环境） |
-| AI搭子 | Cursor（Remote SSH 连接 Linux VMware） |
+| AI 搭子 | Cursor（Remote SSH 连接 Linux VMware） |
 
 ---
 
@@ -41,7 +41,7 @@
 
 对设备建模需要先熟悉 QEMU 中的 **QOM**（导学资料与 B 站课程）。即便现在可以借助 AI 生成代码，**理清每一段代码在做什么**仍然必要。接着是模拟对设备寄存器的访问：通过 **MMIO 回调**实现；按硬件手册落实寄存器读写触发的行为；中断通过 **qemu_irq** 传递。  
 
-**以gpio的建模为例**
+**以 gpio 的建模为例**
 
 **类初始化 `g233_gpio_class_init`** 中配置 `DeviceClass`：
 
@@ -57,7 +57,7 @@
 2. **SysBus 暴露**：仅通过 `sysbus_init_mmio` / `sysbus_init_irq` 声明资源；**基地址由机器/SoC 创建设备时 `sysbus_mmio_map` 决定**，本文件不写死物理地址。
 3. **GPIO 方向**：`qdev_init_gpio_in` 提供 32 根输入；`qdev_init_gpio_out` 提供 32 根输出线，供 `qemu_irq` 连接网络使用。
 
-**qom类的注册和实例化**
+**qom 类的注册和实例化**
 ```text
 type_init(g233_gpio_register_types)
   → type_register_static(&g233_gpio_info)
@@ -73,7 +73,7 @@ g233_gpio_realize
   → qdev_init_gpio_out(..., s->output, ...)
 ```
 
-### 在machine中的创建和中断连接
+### 在 machine 中的创建和中断连接
 
 1. **`qdev_new(TYPE_…)`** — 按 QOM 类型名创建未 realize 的 `DeviceState`。
 2. **`sysbus_realize_and_unref`** — 触发各设备 `DeviceClass::realize`（分配 MMIO、`sysbus_init_irq` 等），并释放创建时的引用。
@@ -83,7 +83,7 @@ g233_gpio_realize
 
 ## 调试手段
 
-用gdb来对某个测试用例进行断点调试。
+用 gdb 来对某个测试用例进行断点调试。
 ```
 QTEST_QEMU_BINARY="gdb --args ./qemu-system-riscv64 ./tests/gevico/qtest/test-flash-read"
 ```
@@ -100,7 +100,7 @@ QTEST_QEMU_BINARY="gdb --args ./qemu-system-riscv64 ./tests/gevico/qtest/test-fl
 - **GPIO_ITP 寄存器**：手册描述与 qtest 中的设置相反。
 - **`test_gpio_plic`**：测试点有误，无法有效清除 PLIC 的 pending 中断。
 
-另外发现AI 为让测试通过，会去修改 PLIC 代码——**不合适**。
+另外发现 AI 为让测试通过，会去修改 PLIC 代码——**不合适**。
 
 ### SPI 建模
 
@@ -119,4 +119,4 @@ SPI master 对从设备的事务访问与手册描述有出入。手册侧典型
 
 专业阶段下来，最大的收获是把 **QOM → realize → MMIO/IRQ/GPIO** 这条链路从「看过文档」变成了能对着代码说清每一步在干什么。SoC 建模表面上是在补设备与 board，实质上是在 QEMU 里把 **手册里的寄存器语义** 落到 **可测试、可迁移、可接线** 的对象上；`sysbus_mmio_map` 与 `sysbus_connect_irq` 则把「设备自己」和「整颗 SoC 的地址与中断拓扑」接起来。
 
-接下来进项目阶段，会带着这套建模与调试习惯，少在脚手架里打转，多在需求与验证闭环里迭代；同时也想继续练 **vibe coding**，探索ai对复杂模型的建模能力。
+接下来进项目阶段，会带着这套建模与调试习惯，少在脚手架里打转，多在需求与验证闭环里迭代；同时也想继续练 **vibe coding**，探索 ai 对复杂模型的建模能力。
