@@ -180,24 +180,28 @@ nav:
     - 介绍页: exercise/index.md
     - QEMU 训练营 2026:
       - 训练营介绍: exercise/2026/index.md
-      - 基础阶段 C 实验: exercise/2026/stage0/learning-c.md
-      - 基础阶段 Rust 实验: exercise/2026/stage0/learning-rust.md
-      - 专业阶段 CPU 实验:
-        - 实验介绍: exercise/2026/stage1/cpu/index.md
-        - CPU 实验手册: exercise/2026/stage1/cpu/cpu-exper-manual.md
-        - CPU 硬件手册: exercise/2026/stage1/cpu/cpu-datasheet.md
-      - 专业阶段 SOC 实验:
-        - 实验介绍: exercise/2026/stage1/soc/index.md
-        - SOC 实验手册: exercise/2026/stage1/soc/g233-exper-manual.md
-        - SOC 硬件手册: exercise/2026/stage1/soc/g233-datasheet.md
-      - 专业阶段 GPU 实验:
-        - 实验介绍: exercise/2026/stage1/gpu/index.md
-        - GPU 实验手册: exercise/2026/stage1/gpu/gpu-exper-manual.md
-        - GPU 硬件手册: exercise/2026/stage1/gpu/gpu-datasheet.md
-      - 专业阶段 Rust 实验:
-        - 实验介绍: exercise/2026/stage1/rust/index.md
-        - Rust 实验手册: exercise/2026/stage1/rust/rust-exper-manual.md
-        - Rust 编程指南: exercise/2026/stage1/rust/rust-lang-manual.md
+      - 基础阶段:
+        - 实验介绍: exercise/2026/stage0/index.md
+        - C 实验: exercise/2026/stage0/learning-c.md
+        - Rust 实验: exercise/2026/stage0/learning-rust.md
+      - 专业阶段:
+        - 实验介绍: exercise/2026/stage1/index.md
+        - CPU 实验:
+          - 实验介绍: exercise/2026/stage1/cpu/index.md
+          - CPU 实验手册: exercise/2026/stage1/cpu/cpu-exper-manual.md
+          - CPU 硬件手册: exercise/2026/stage1/cpu/cpu-datasheet.md
+        - SoC 实验:
+          - 实验介绍: exercise/2026/stage1/soc/index.md
+          - SoC 实验手册: exercise/2026/stage1/soc/g233-exper-manual.md
+          - SoC 硬件手册: exercise/2026/stage1/soc/g233-datasheet.md
+        - GPU 实验:
+          - 实验介绍: exercise/2026/stage1/gpu/index.md
+          - GPGPU 实验手册: exercise/2026/stage1/gpu/gpu-exper-manual.md
+          - GPGPU 硬件手册: exercise/2026/stage1/gpu/gpu-datasheet.md
+        - Rust 实验:
+          - 实验介绍: exercise/2026/stage1/rust/index.md
+          - Rust 实验手册: exercise/2026/stage1/rust/rust-exper-manual.md
+          - Rust 编程指南: exercise/2026/stage1/rust/rust-lang-manual.md
   - 博客:
     - 介绍页: blogs/index.md
     - 训练营 2026:
