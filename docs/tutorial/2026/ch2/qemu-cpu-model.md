@@ -2,208 +2,504 @@
 
 !!! note "主要贡献者"
 
-    - 作者：[@zevorn](https://github.com/zevorn)
+    - 作者：[@zevorn](https://github.com/zevorn) [@Plucky923](https://github.com/Plucky923)
 
-在 QEMU 中为 RISC-V 架构添加一个新的 CPU 模型，其核心是建立在 QOM（QEMU Object Model）框架之上的。整个建模过程遵循 QEMU 设备模型的通用范式，但融入了 RISC-V 特有的扩展管理、多核拓扑和特权级架构。比如 QEMU RISC-V 包含了一个 RISCVCPUConfig 数据结构，允许为不同类型的 CPU，绑定对应的扩展，极大地的提高了灵活性和可维护性。
+在 QEMU 中理解或新增一个 RISC-V CPU 型号，最好不要把注意力只放在某一个文件上。按照源码实现，主要涉及下面 4 个内容：
+
+- QOM 类型系统：CPU 作为什么类型注册到 QEMU 对象模型中。
+- 模型默认值：某个 CPU 型号默认开启哪些扩展、采用哪个特权规范版本、支持哪种地址转换模式。
+- CPU 实例状态：这些默认值最后如何落到 `RISCVCPU` 对象的 `env` 和 `cfg` 上。
+- 主板集成：机器模型怎样根据 `-cpu`、`-smp`、`-numa` 去实例化真正的 hart。
+
+RISC-V 这套实现的核心结构有四个：
+
+- `RISCVCPU`：具体 CPU 实例，对应一个 hart。
+- `RISCVCPUClass`：CPU 类型对应的类对象，其中保存着该型号的默认定义。
+- `RISCVCPUDef`：某个 CPU 型号的默认“蓝图”。
+- `RISCVCPUConfig`：扩展开关和数值型配置项，最终保存在 CPU 实例里。
 
 !!! tip "概览"
 
-    - CPU 模型在 QEMU 初始化链路中的位置与职责
-    - RISC-V CPU 的 QOM 继承关系与关键结构
-    - 定义新 CPU 类型与 RISCVCPUDef 配置流程
-    - 添加指令集扩展与特权/向量规范
-    - 在主板与命令行中启用新 CPU
+    - RISC-V CPU 模型在 QEMU 初始化链路中的位置
+    - 当前源码中的 RISC-V CPU 类型层次
+    - 当前源码中新增一个 CPU 型号的真实流程
+    - 当前源码中新增一个 ISA 扩展的真实流程
+    - `virt` 主板如何根据 `-cpu`、`-smp`、`-numa` 实例化 hart
 
 ## 整体分析
 
-我们可以从 QEMU 初始化的流程，来看看 CPU 模型在哪个环节被实例化：
+从初始化顺序看，RISC-V CPU 模型大致处在下面这条链路中：
 
-```bash
-QEMU 命令行 (-M virt -cpu rv64,...)
+```text
+QEMU 命令行
+(-M virt -cpu ... -smp ... -numa ...)
         ↓
-选择并实例化机器模型 (RISCVVirtState)
+system/vl.c 解析机器类型和 CPU 选项
         ↓
-创建 CPU 集群 (RISCVHartArrayState)
+MachineState.cpu_type 确定当前机器要使用的 CPU 型号
         ↓
-初始化具体 CPU 核心 (RISCVCPU) → 加载配置 (RISCVCPUConfig)
+板级代码创建一个或多个 RISCVHartArrayState
         ↓
-TCG 前端翻译指令 → 后端生成主机代码
+每个 RISCVHartArrayState 实例化若干 RISCVCPU
         ↓
-CPU 主循环执行 → 处理中断/异常/CSR访问
+riscv_cpu_init() 把 RISCVCPUClass.def 的默认值写入实例
         ↓
-集成平台外设 → 启动操作系统
+CPU realize / accelerator 相关初始化
+        ↓
+进入运行阶段，执行翻译、异常、中断、CSR 等逻辑
 ```
 
-可以看到，QEMU 的 CPU 模拟是一个多层次协作的体系，在初始化阶段，CPU 模型依托所属的板卡进行实例化，目前单张板卡只支持同构的 CPU 处理器模型；在运行阶段，主要通过模拟 CPU 的指令执行，来驱动整个仿真环境的状态更新。
+这一点很重要：在当前 RISC-V 实现里，“CPU 型号定义”和“CPU 实例创建”是两回事。
 
-所有硬件在 QEMU 中都是对象。RISC-V CPU 的 QOM 继承链清晰地定义了从通用设备到具体 CPU 模型的层次关系。下面给出一个 QOM 与 RISC-V 的关系图（摘自 [PLCT Lab · 从零开始的 RISC-V 模拟器开发][1]）
+- `target/riscv/cpu.c` 负责定义“有哪些 CPU 型号、每个型号的默认配置是什么”。
+- `hw/riscv/*.c` 里的板级代码负责决定“创建多少个 hart、这些 hart 如何分组、每个 hart 用什么 CPU 型号”。
 
-```bash
-                                                                                  +--------------------------+
-                                                                                  | TYPE_RISCV_CPU_MAX       |
-                                                                                  +--------------------------+
-  cpu base type                                                                   | TYPE_RISCV_CPU_BASE32    |
-+---------------+    +---------------+   +------------+     +----------------+    +--------------------------+
-|  TYPE_OBJECT  +--->|  TYPE_DEVICE  +-->|  TYPE_CPU  +---->| TYPE_RISCV_CPU +--> | TYPE_RISCV_CPU_SHAKTI_C  |
-+---------------+    +---------------+   +------------+     +----------------+    +--------------------------+
-                                                                                  | TYPE_RISCV_CPU_VEYRON_V1 |
-  cpu class (interface)                                                           +--------------------------+
-+---------------+    +---------------+   +------------+     +---------------+     | TYPE_RISCV_CPU_HOST      |
-|  ObjectClass  +--->|  DeviceClass  +-->|  CPUClass  +---->| RISCVCPUClass |     +--------------------------+
-+---------------+    +---------------+   +------------+     +---------------+
+另外，也不能简单地把 RISC-V 板卡理解成“永远只支持同构 CPU”。`virt` 和 `spike` 这种机器通常会按同一种 `cpu_type` 批量创建 hart；但像 `sifive_u`、`microchip_pfsoc` 这类 SoC，在源码里本来就会创建多个 cluster，而且不同 cluster 可以使用不同的 CPU 类型。
 
-  cpu object (property)
-+---------------+    +---------------+   +------------+     +-------------------+
-|  Object       +--->|  DeviceState  +-->|  CPUState  +---->| RISCVCPU(ArchCPU) |
-+---------------+    +---------------+   +------------+     +-------------------+
+## RISC-V CPU 的类型层次
+
+当前源码中的 RISC-V CPU 继承关系，大致可以概括为：
+
+```text
+TYPE_CPU
+  └─ TYPE_RISCV_CPU
+       ├─ TYPE_RISCV_DYNAMIC_CPU
+       │    ├─ TYPE_RISCV_CPU_MAX
+       │    ├─ TYPE_RISCV_CPU_BASE32
+       │    ├─ TYPE_RISCV_CPU_BASE64
+       │    └─ TYPE_RISCV_CPU_BASE128
+       ├─ TYPE_RISCV_VENDOR_CPU
+       │    ├─ TYPE_RISCV_CPU_IBEX
+       │    ├─ TYPE_RISCV_CPU_SHAKTI_C
+       │    ├─ TYPE_RISCV_CPU_THEAD_C906
+       │    ├─ TYPE_RISCV_CPU_VEYRON_V1
+       │    ├─ TYPE_RISCV_CPU_XIANGSHAN_NANHU
+       │    └─ TYPE_RISCV_CPU_G233
+       └─ TYPE_RISCV_BARE_CPU
+            ├─ TYPE_RISCV_CPU_RV32I
+            ├─ TYPE_RISCV_CPU_RV32E
+            ├─ TYPE_RISCV_CPU_RV64I
+            └─ TYPE_RISCV_CPU_RV64E
 ```
 
+从数据结构角度看，最值得记住的是下面这几层关系：
 
-## 添加新 CPU 类型
+- `RISCVCPUClass` 里有一个 `RISCVCPUDef *def`，表示这个 CPU 类型的默认配置。
+- `RISCVCPU` 实例里有 `CPURISCVState env` 和 `RISCVCPUConfig cfg`。
+- 创建实例时，`riscv_cpu_init()` 会把 `RISCVCPUClass.def` 里的默认值合并到实例上。
 
-现在我们尝试，为一个假设的 RISC-V 64 位 CPU 型号（例如 g233-cpu）创建其 QEMU 模型。整个过程严格遵循 QOM 框架，核心是定义静态“蓝图”（RISCVCPUDef）并将其绑定到一个新的 QOM 类型上。实际流程并不复杂（照葫芦画瓢即可），不同的 target 大致流程类似，具体步骤如下：
+也就是说，QOM 类型负责“分类”，`RISCVCPUDef` 负责“默认值”，而 `RISCVCPU` 才是运行时真正参与执行的对象。
 
-- **定义 CPU 类型标识符（Type Name）**：在 QEMU 的 QOM 系统中，每个对象类型都有一个唯一的字符串名称。对于 CPU 类型，RISC-V 提供了便利的宏来生成标准化的名称。一般在 `cpu-qom.h` 中定义。使用 `RISCV_CPU_TYPE_NAME()` 宏为新的 CPU 定义一个类型标识符。这个宏确保了命名的一致性。
+## 当前源码中如何定义一个新 CPU 型号
 
-    ```c
-    // path: target/riscv/cpu-qom.h
-    #define TYPE_RISCV_CPU_G233       RISCV_CPU_TYPE_NAME("g233-cpu")
-    ```
-    此后，在代码中即可使用 `TYPE_RISCV_CPU_G233` 来指代这个新类型，其对应的类型字符串是“g233-cpu”。用户未来在命令行将通过 `-cpu g233-cpu` 来指定它。
+如果要按照当前源码的方式新增一个 RISC-V CPU 型号，重点不再是手写一个专门的 `class_init()`，而是把新型号注册进 `riscv_cpu_type_infos[]` 这张表，并通过 `class_data` 提供 `RISCVCPUDef`。
 
-- **定义 CPU 的静态蓝图（RISCVCPUDef）**：`RISCVCPUDef` 结构体描述了 CPU 型号的所有静态、不可变的属性，如最大字长、默认启用的指令集扩展、特权架构版本等。这些信息在类初始化时被载入，并成为后续实例配置的基准。
+### 第 1 步：定义用户可见型号对应的 QOM 类型名
 
-    ```c
-    /* target/riscv/cpu.c */
-    static const RISCVCPUDef g233_cpu_def = {
-        .name = TYPE_RISCV_CPU_G233,
-        .misa_mxl_max = MXL_RV64, /* 最大支持 RV64 */
-        .misa_ext = RVI | RVM | RVA | RVC | RVU, /* 默认启用 I, M, A, C, U 扩展 */
-        .priv_spec = PRIV_VERSION_1_12_0, /* 遵循 v1.12 特权规范 */
-        .vext_spec = VEXT_VERSION_1_00_0, /* 向量扩展规范版本 (如果支持) */
-        .cfg = {
-            .ext_zicsr = true, /* 启用 CSR 指令 */
-            .ext_zifencei = true, /* 启用指令栅栏 */
-            .mmu = true, /* 支持内存管理单元 */
-            .pmp = true, /* 支持物理内存保护 */
-            .max_satp_mode = VM_1_10_SV39, /* 默认最高支持 Sv39 虚拟内存方案 */
-            /* 可根据需要启用更多扩展，例如： */
-            /* .ext_zba = true, */
-            /* .ext_zbb = true, */
-        },
-    };
-    ```
-    `cfg` 字段是一个 `RISCVCPUConfig` 结构体实例，它包含了所有可配置扩展的布尔开关。
-
-- **创建 QOM 类型并绑定蓝图**：现在需要创建一个继承自 `TYPE_RISCV_CPU` 的新 QOM 类型，并在其类初始化函数中，将上一步定义的 `g233_cpu_def` 赋值给 `RISCVCPUClass`。
-
-    ```c
-    /* target/riscv/cpu.c */
-
-    /*
-     * 声明类型相关的结构体和函数：
-     * 虽然新类型本身不增加新的实例字段，但为了使用 QOM 宏，仍需进行声明。
-     * 在 cpu.c 文件顶部附近或其他合适位置，为这个新类型声明类结构体和初始化函数。
-     */
-    #define RISCV_CPU_CLASS(klass) \
-        OBJECT_CLASS_CHECK(RISCVCPUClass, (klass), TYPE_RISCV_CPU)
-    #define RISCV_CPU_GET_CLASS(obj) \
-        OBJECT_GET_CLASS(RISCVCPUClass, (obj), TYPE_RISCV_CPU)
-
-    /* 新类型的类初始化函数声明 */
-    static void g233_cpu_class_init(ObjectClass *oc, void *data);
-    /* 新类型的实例初始化函数（可选，用于更复杂的实例设置） */
-    static void g233_cpu_init(Object *obj);
-
-    /* 这是最关键的一步，将静态蓝图 (RISCVCPUDef) 关联到动态的类 (RISCVCPUClass) 上。 */
-    static void g233_cpu_class_init(ObjectClass *oc, void *data)
-    {
-        DeviceClass *dc = DEVICE_CLASS(oc);
-        RISCVCPUClass *rcc = RISCV_CPU_CLASS(oc);
-        rcc->def = &g233_cpu_def; /* 绑定到类 */
-        /* 可以在此设置设备类相关的属性，但 CPU 核心设置通常已在通用类初始化中完成 */
-    }
-    ```
-- **将类型信息注册到 QOM 系统**：最后，需要将新类型的 `TypeInfo` 描述添加到全局的类型信息数组中，以便 QEMU 在启动时能够识别它。
-
-    ```c
-    static const TypeInfo riscv_cpu_type_infos[] = {
-        /* ... 其他已有 CPU 类型的定义，例如 base, sifive-u54, host ... */
-        {
-            .name = TYPE_RISCV_CPU_G233,
-            .parent = TYPE_RISCV_CPU,
-            .instance_size = sizeof(RISCVCPU),
-            .instance_init = mycpu64_cpu_init, /* 可选的实例初始化 */
-            .class_size = sizeof(RISCVCPUClass),
-            .class_init = mycpu64_cpu_class_init, /* 指向我们刚实现的函数 */
-        },
-    };
-    ```
-
-    `riscv_cpu_type_infos` 数组最终通过 `type_init` 或相关的模块注册机制被处理。在 RISC-V 代码中，通常使用 `DEFINE_TYPES(riscv_cpu_type_infos)` 宏来完成所有 CPU 类型的统一注册。只要我们的新条目在数组中，就会被自动注册。
-
-完成上述代码修改并重新编译 QEMU 后，即可验证新 CPU 类型是否成功注册。运行 `qemu-system-riscv64 -cpu help` 命令，你应在输出的 CPU 型号列表中看到 `g233-cpu`。
-
-也可以使用 `-cpu g233-cpu` 参数启动一个虚拟机（例如 virt 主板）。如果启动成功，并在后续的 `info qom-tree` 或 `info registers` 等监控命令中看到对应的 CPU 对象和正确的扩展状态（如 MISA 寄存器值），即证明注册成功。
-
-```bash
-qemu-system-riscv64 -M virt -cpu g233-cpu \
-    -nographic -bios none \
-    -kernel your_kernel_image
-```
-
-至此，你已经完成了一个全新的 RISC-V CPU 型号在 QEMU 中的基础定义与注册。它现在拥有了自己的默认配置身份，可以被用户和机器模型引用。接下来的章节将讨论如何为这个新 CPU 添加指令扩展，并最终集成到特定的 virt 主板环境中。
-
-## 添加指令集扩展
-
-指令集扩展通过 `RISCVCPUConfig` 结构体来配置，每个扩展对应一个 bool 类型的成员变量。
-
-这个结构体在 `target/riscv/cpu_cfg.h` 中定义。
-
-指令集扩展的配置，是在 CPU 初始化时，通过 `cpu->cfg` 来配置的。
-
-也就是前面定义 CPU 的类型时，调用的 class_init() 函数中配置。
+首先需要在 `target/riscv/cpu-qom.h` 中增加一个类型宏：
 
 ```c
-// 定义指令集扩展配置结构体
-// path: target/riscv/cpu_cfg.h
-struct RISCVCPUConfig {
-    bool ext_zba;
-    bool ext_zbb;
-    bool ext_zbc;
-    bool ext_zbkb;
-    bool ext_zbkc;
-    bool ext_zbkx;
-    bool ext_g233; /* 自定义扩展 */
+// path: target/riscv/cpu-qom.h
+#define TYPE_RISCV_CPU_G233 RISCV_CPU_TYPE_NAME("g233-cpu")
+```
+
+这里容易混淆的一点是：
+
+- 用户在命令行里写的是 `-cpu g233-cpu`；
+- QOM 内部真正查找的类型名是 `g233-cpu-riscv-cpu`。
+
+这是因为 `RISCV_CPU_TYPE_NAME(name)` 会把 `name` 和后缀 `-riscv-cpu` 拼接起来。
+
+### 第 2 步：把新型号加入 `riscv_cpu_type_infos[]`
+
+当前源码里，RISC-V CPU 型号主要通过 `DEFINE_RISCV_CPU()` 这个宏加入 `target/riscv/cpu.c` 中的 `riscv_cpu_type_infos[]`：
+
+```c
+// path: target/riscv/cpu.c
+DEFINE_RISCV_CPU(TYPE_RISCV_CPU_G233, TYPE_RISCV_VENDOR_CPU,
+    .misa_mxl_max = MXL_RV64,
+    .misa_ext = RVI | RVM | RVA | RVC | RVU,
+    .priv_spec = PRIV_VERSION_1_12_0,
+    .vext_spec = VEXT_VERSION_1_00_0,
+    .cfg.ext_xg233 = true,
+    .cfg.ext_zicsr = true,
+    .cfg.ext_zifencei = true,
+    .cfg.mmu = true,
+    .cfg.pmp = true,
+    .cfg.max_satp_mode = VM_1_10_SV39,
+),
+```
+
+这里实际上已经把“CPU 型号定义”表达清楚了：
+
+- 它继承自哪个抽象父类型，这里是 `TYPE_RISCV_VENDOR_CPU`；
+- 它默认支持哪种位宽，这里是 `RV64`；
+- 它默认打开哪些单字母 MISA 扩展；
+- 它的特权规范版本和向量规范版本；
+- 它在 `RISCVCPUConfig` 中默认打开哪些多字母或厂商扩展；
+- 它支持的最大 `satp` 模式。
+
+### 第 3 步：理解 `DEFINE_RISCV_CPU()` 背后到底做了什么
+
+`DEFINE_RISCV_CPU()` 并不是简单插入一个字符串，它本质上是在 `TypeInfo` 里构造一个带 `class_data` 的条目。这个 `class_data` 就是一份匿名的 `RISCVCPUDef`：
+
+```c
+// path: target/riscv/cpu.c
+#define DEFINE_RISCV_CPU(type_name, parent_type_name, ...)  \
+    {                                                       \
+        .name = (type_name),                                \
+        .parent = (parent_type_name),                       \
+        .class_data = &(const RISCVCPUDef) {                \
+             .priv_spec = RISCV_PROFILE_ATTR_UNUSED,        \
+             .vext_spec = RISCV_PROFILE_ATTR_UNUSED,        \
+             .cfg.max_satp_mode = -1,                       \
+             __VA_ARGS__                                    \
+        },                                                  \
+    }
+```
+
+### 第 4 步：默认值如何从父类型继承下来
+
+类型注册之后，真正负责“把父类默认值和当前型号默认值合并起来”的函数是 `riscv_cpu_class_base_init()`：
+
+```c
+// path: target/riscv/cpu.c
+static void riscv_cpu_class_base_init(ObjectClass *c, const void *data)
+{
+    RISCVCPUClass *mcc = RISCV_CPU_CLASS(c);
+    RISCVCPUClass *pcc = RISCV_CPU_CLASS(object_class_get_parent(c));
+
+    if (pcc->def) {
+        mcc->def = g_memdup2(pcc->def, sizeof(*pcc->def));
+    } else {
+        mcc->def = g_new0(RISCVCPUDef, 1);
+    }
+
+    if (data) {
+        const RISCVCPUDef *def = data;
+        ...
+        mcc->def->misa_ext |= def->misa_ext;
+        riscv_cpu_cfg_merge(&mcc->def->cfg, &def->cfg);
+    }
 }
 ```
 
-## 在主板中启用新 CPU
+- 先复制父类型的 `RISCVCPUDef`；
+- 再把当前型号在 `class_data` 里给出的字段 merge 进去；
+- 最终得到这个具体 CPU 类型对应的 `RISCVCPUClass.def`。
 
-通过前面的工作，我们已经在 QEMU 的 RISC-V CPU 模型中成功定义并注册了名为 `g233-cpu` 的新 CPU 类型。然而，定义类型只是第一步，要让我们的 CPU 真正运行起来，还需要一个明确的“启用”流程，即关联到具体的主板中，一般 virt 主板可以动态选择，其他厂商的主板一般是固定实例化某个类型的 CPU。
+因此，选择父类型非常重要。比如：
 
-但流程上比较类似，我们还是以 virt 主板为例进行分析：
+- 继承 `TYPE_RISCV_DYNAMIC_CPU`，会得到更偏“通用可配置 CPU”的默认行为；
+- 继承 `TYPE_RISCV_VENDOR_CPU`，更适合厂商型号；
+- 继承 `TYPE_RISCV_BARE_CPU`，则更适合极简、近似裸机的 CPU 型号。
 
-当 QEMU 解析到 `-cpu g33-cpu` 时，类型字符串“riscv-cpu-g33-cpu”（即 `TYPE_RISCV_CPU_G233` 的展开）会被传递给 virt 机器模型。机器初始化过程中，关键的创建步骤发生在 `RISCVHartArrayState` 对象内：
+### 第 5 步：实例化时如何把默认值写入 `RISCVCPU`
 
-- 分配 Hart 数组：根据 `-smp` 参数，virt 机器为每个 NUMA 节点创建一个 `RISCVHartArrayState` 对象，每个对象内部管理一组 hart。
+当某个具体 CPU 对象真的被创建出来时，调用的是通用实例初始化函数 `riscv_cpu_init()`：
 
-- 动态创建 CPU 实例：对于需要创建的每一个 hart，`RISCVHartArrayState` 会调用 `object_new(“riscv-cpu-g33-cpu”)`。
+```c
+// path: target/riscv/cpu.c
+static void riscv_cpu_init(Object *obj)
+{
+    RISCVCPUClass *mcc = RISCV_CPU_GET_CLASS(obj);
+    RISCVCPU *cpu = RISCV_CPU(obj);
+    CPURISCVState *env = &cpu->env;
 
-    `object_new()` 是 QOM 的核心函数，它根据类型名在已注册的类型系统中查找对应的 `TypeInfo`，然后分配内存并初始化一个该类型的对象实例。
+    env->misa_mxl = mcc->def->misa_mxl_max;
+    env->misa_ext_mask = env->misa_ext = mcc->def->misa_ext;
+    riscv_cpu_cfg_merge(&cpu->cfg, &mcc->def->cfg);
 
-    此处，类型 `riscv-cpu-g33-cpu` 对应的 `TypeInfo` 已在 `riscv_cpu_type_infos[]` 中注册，其 `instance_init` 函数（例如 `g233_cpu_init`）会被调用，完成对该 `RISCVCPU` 对象 `env` 和 `cfg` 的初步设置。
+    if (mcc->def->priv_spec != RISCV_PROFILE_ATTR_UNUSED) {
+        cpu->env.priv_ver = mcc->def->priv_spec;
+    }
+    if (mcc->def->vext_spec != RISCV_PROFILE_ATTR_UNUSED) {
+        cpu->env.vext_ver = mcc->def->vext_spec;
+    }
+    ...
+}
+```
 
-- 应用默认配置：新创建的 `RISCVCPU` 实例会从其关联的 `RISCVCPUClass.def` （即我们定义的 `g233_cpu_def` 静态结构体）中，将默认的配置（如 `misa` 扩展位图、`priv_ver` 等）拷贝到实例自身的 `RISCVCPU.cfg` 中，完成 CPU 的初始化。
+所以源码里，“定义 CPU 型号”的真正结果是：
 
-- 挂载到对象树：最终，这些 `RISCVCPU` 实例作为子对象被挂载到 `RISCVHartArrayState` 及更上层的 `RISCVVirtState`（机器对象）之下，形成我们在 `info qom-tree` 命令中看到的层次化对象树。
+1. 在 QOM 类型系统里新增一个类型；
+2. 为这个类型构造一份 `RISCVCPUClass.def`；
+3. 当实例被创建时，再把这份 `def` 的内容合并到 `RISCVCPU` 实例上。
+
+
+### 第 6 步：如何验证新型号已经注册成功
+
+做完类型定义后，可以通过下面几种方式验证：
+
+- `qemu-system-riscv64 -cpu help`：确认用户可见型号名已经出现；
+- `qemu-system-riscv64 -M virt -cpu g233-cpu ...`：确认可以被板级代码正常选用；
+- QEMU monitor 中观察 `info qom-tree`：确认对象树里出现了对应 CPU 实例。
+
+## 当前源码中如何添加一个扩展
+
+
+通过 `cpu_cfg_fields.h.inc` 生成：
+
+```c
+// path: target/riscv/cpu_cfg.h
+struct RISCVCPUConfig {
+#define BOOL_FIELD(x) bool x;
+#define TYPED_FIELD(type, x, default) type x;
+#include "cpu_cfg_fields.h.inc"
+};
+```
+
+因此，如果你要新增一个自定义扩展 `xg233`，真正加字段的地方通常是：
+
+```c
+// path: target/riscv/cpu_cfg_fields.h.inc
+BOOL_FIELD(ext_xg233)
+```
+
+非标准扩展按RISC-V约定应以x开头。
+
+`cpu_cfg.h` 里有一组 `MATERIALISE_EXT_PREDICATE()` 宏，会为扩展生成统一的判断函数：
+
+```c
+// path: target/riscv/cpu_cfg.h
+MATERIALISE_EXT_PREDICATE(xg233)
+```
+
+这样源码其他位置就可以通过统一风格去判断该扩展是否开启。对于简单扩展，这通常只是把 `cfg.ext_xg233` 包装成一个小函数；对于更复杂的扩展族，源码里也有像 `has_xmips_p()`、`has_xthead_p()` 这样的聚合判断函数。
+
+### 扩展元数据表
+
+如果希望扩展真正进入 RISC-V 扩展元数据体系，就需要把它加入 `isa_edata_arr[]`：
+
+```c
+// path: target/riscv/cpu.c
+ISA_EXT_DATA_ENTRY(xg233, PRIV_VERSION_1_12_0, ext_xg233),
+```
+
+这一项至少表达了三件事：
+
+- 扩展名是 `xg233`；
+- 这个扩展对应的最小特权规范版本；
+- 它在 `RISCVCPUConfig` 里的开关字段偏移。
+
+这一张表会参与 ISA 扩展相关的多个流程，例如构造 ISA 字符串时，就会遍历 `isa_edata_arr[]`，把当前已经启用的多字母扩展拼进去。
+
+
+仅仅把字段加进 `RISCVCPUConfig`，还不足以让用户从命令行打开它。当前源码里，多字母扩展的属性暴露主要依赖几张配置表。
+
+对于厂商扩展，通常要加入 `riscv_cpu_vendor_exts[]`：
+
+```c
+// path: target/riscv/cpu.c
+const RISCVCPUMultiExtConfig riscv_cpu_vendor_exts[] = {
+    ...
+    MULTI_EXT_CFG_BOOL("xg233", ext_xg233, false),
+    { },
+};
+```
+
+这里的作用是把扩展名 `"xg233"` 和 `RISCVCPUConfig.ext_xg233` 关联起来，使它可以作为 CPU 属性参与解析。
+
+可以把这一步理解成：前面只是“CPU 内部知道有这个扩展”，而这里才是“把这个扩展暴露给用户配置接口”。
+
+### 最后，给具体 CPU 型号设置默认值
+
+扩展是否默认打开，最终还是由具体 CPU 型号决定。例如 `g233-cpu` 默认打开 `xg233`，就是在该型号对应的 `DEFINE_RISCV_CPU()` 条目里完成的：
+
+```c
+// path: target/riscv/cpu.c
+DEFINE_RISCV_CPU(TYPE_RISCV_CPU_G233, TYPE_RISCV_VENDOR_CPU,
+    ...
+    .cfg.ext_xg233 = true,
+    ...
+),
+```
+
+这说明一个常被忽略的区别：
+
+- “QEMU 支持某个扩展”是一回事；
+- “某个 CPU 型号默认启用该扩展”是另一回事。
+
+前者决定框架有没有能力识别和处理这个扩展，后者决定用户选中某个 CPU 型号时，这个扩展默认是否处于开启状态。
+
+### 单字母扩展和多字母扩展并不完全一样
+
+当前源码中，单字母扩展和多字母扩展并不是走完全相同的路径：
+
+- 单字母扩展主要通过 `misa_ext` 这样的位图表示，例如 `RVI`、`RVM`、`RVA`、`RVC`；
+- 多字母扩展、命名特性和厂商扩展主要通过 `RISCVCPUConfig` 里的 `ext_*` 字段表示。
+
+所以在定义一个 CPU 型号时，经常会同时看到两类配置：
+
+```c
+.misa_ext = RVI | RVM | RVA | RVC | RVU,
+.cfg.ext_zicsr = true,
+.cfg.ext_zifencei = true,
+.cfg.ext_xg233 = true,
+```
+
+## 在主板中启用一个 CPU 型号
+
+前面几节解决的是“这个 CPU 型号怎样注册到 QEMU 里”。接下来要解决的问题是：“当用户写下 `-cpu g233-cpu` 时，这个型号怎样真正变成主板里的一个个 hart？”
+
+以 `virt` 主板为例，这条链路大致可以拆成 5 步。
+
+### 第 1 步：命令行决定 `MachineState.cpu_type`
+
+在 `system/vl.c` 中，QEMU 会先拿到机器默认 CPU 类型；如果用户显式传了 `-cpu`，则用用户给的型号覆盖：
+
+```c
+// path: system/vl.c
+current_machine->cpu_type = machine_default_cpu_type(current_machine);
+if (cpu_option) {
+    current_machine->cpu_type = parse_cpu_option(cpu_option);
+}
+```
+
+对 RISC-V 来说，`parse_cpu_option()` 最终会通过 `riscv_cpu_class_by_name()` 把用户输入的 `g233-cpu` 映射到内部 QOM 类型名：
+
+```c
+// path: target/riscv/cpu.c
+static ObjectClass *riscv_cpu_class_by_name(const char *cpu_model)
+{
+    ...
+    typename = g_strdup_printf(RISCV_CPU_TYPE_NAME("%s"), cpuname[0]);
+    oc = object_class_by_name(typename);
+    ...
+}
+```
+
+因此，`-cpu g233-cpu` 最终会把 `MachineState.cpu_type` 设成 `g233-cpu-riscv-cpu` 这个内部类型名。
+
+### 第 2 步：`virt` 主板声明自己的 CPU 拓扑能力
+
+`virt_machine_class_init()` 中可以看到，`virt` 机器会把默认 CPU 类型和 NUMA 相关的几个回调都挂到 `MachineClass` 上：
+
+```c
+// path: hw/riscv/virt.c
+mc->default_cpu_type = TYPE_RISCV_CPU_BASE;
+mc->possible_cpu_arch_ids = riscv_numa_possible_cpu_arch_ids;
+mc->cpu_index_to_instance_props = riscv_numa_cpu_index_to_props;
+mc->get_default_cpu_node_id = riscv_numa_get_default_cpu_node_id;
+mc->numa_mem_supported = true;
+mc->cpu_cluster_has_numa_boundary = true;
+```
+
+这说明 `virt` 主板不仅能选择 CPU 类型，还显式支持：
+
+- `-smp` 指定的 CPU 数量和拓扑；
+- `-numa` 指定的节点划分；
+- CPU 到 NUMA node 的默认映射。
+
+### 第 3 步：`-smp` 和 `-numa` 决定要创建多少 hart
+
+在这一条链路里，有几个概念最好先区分开：
+
+- **hart**：RISC-V 硬件线程。对当前实现而言，可以近似看成一个 `RISCVCPU` 实例。
+- **`-smp`**：决定当前虚拟机要启动多少个 CPU，以及 `sockets/cores/threads` 等拓扑参数。
+- **NUMA**：把 CPU 和内存划成多个 node；在 `virt` 的实现里，这会进一步影响 socket 数、hart 分组和 `mhartid` 分配。
+
+RISC-V 的 NUMA 辅助逻辑在 `hw/riscv/numa.c` 中。例如：
+
+```c
+// path: hw/riscv/numa.c
+int riscv_socket_count(const MachineState *ms)
+{
+    return (numa_enabled(ms)) ? ms->numa_state->num_nodes : 1;
+}
+```
+
+这意味着：
+
+- 没有启用 NUMA 时，`virt` 只会创建 1 个 socket；
+- 启用 NUMA 时，socket 数量等于 NUMA node 数量。
+
+同时，`riscv_numa_possible_cpu_arch_ids()` 会基于 `ms->smp.max_cpus` 预先生成 `possible_cpus[]`，并把每个 CPU 插槽的 `type` 设为 `ms->cpu_type`。之后，QEMU 通用 NUMA 逻辑再结合 `-numa` 去给这些 CPU 插槽分配 node。
+
+### 第 4 步：`virt` 先创建 `RISCVHartArrayState`
+
+`virt` 主板本身并不会直接逐个 `new` 出所有 `RISCVCPU`。它先创建的是若干个 `RISCVHartArrayState`，每个数组对象负责管理一组 hart：
+
+```c
+// path: hw/riscv/virt.c
+object_initialize_child(OBJECT(machine), soc_name, &s->soc[i],
+                        TYPE_RISCV_HART_ARRAY);
+object_property_set_str(OBJECT(&s->soc[i]), "cpu-type",
+                        machine->cpu_type, &error_abort);
+object_property_set_int(OBJECT(&s->soc[i]), "hartid-base",
+                        base_hartid, &error_abort);
+object_property_set_int(OBJECT(&s->soc[i]), "num-harts",
+                        hart_count, &error_abort);
+sysbus_realize(SYS_BUS_DEVICE(&s->soc[i]), &error_fatal);
+```
+
+这里传下去的几项信息分别是：
+
+- `cpu-type`：这一组 hart 使用哪种 CPU 型号；
+- `hartid-base`：这一组 hart 的起始 `mhartid`；
+- `num-harts`：这一组里有多少个 hart。
+
+从对象树角度看，`RISCVVirtState` 下面先挂的是 `soc0`、`soc1` 这样的 hart 数组对象，而不是直接挂若干个 CPU。
+
+### 第 5 步：`RISCVHartArrayState` 再逐个实例化 `RISCVCPU`
+
+真正逐个创建 CPU 的工作发生在 `hw/riscv/riscv_hart.c`：
+
+```c
+// path: hw/riscv/riscv_hart.c
+static void riscv_harts_realize(DeviceState *dev, Error **errp)
+{
+    RISCVHartArrayState *s = RISCV_HART_ARRAY(dev);
+    int n;
+
+    s->harts = g_new0(RISCVCPU, s->num_harts);
+    for (n = 0; n < s->num_harts; n++) {
+        if (!riscv_hart_realize(s, n, s->cpu_type, errp)) {
+            return;
+        }
+    }
+}
+```
+
+而单个 hart 的创建逻辑是：
+
+```c
+// path: hw/riscv/riscv_hart.c
+object_initialize_child(OBJECT(s), "harts[*]", &s->harts[idx], cpu_type);
+qdev_prop_set_uint64(DEVICE(&s->harts[idx]), "resetvec", s->resetvec);
+...
+s->harts[idx].env.mhartid = s->hartid_base + idx;
+return qdev_realize(DEVICE(&s->harts[idx]), NULL, errp);
+```
+
+这里可以看出几件事：
+
+- 当前代码使用的是 `object_initialize_child()`，不是直接手写 `object_new()`；
+- 每个 `RISCVCPU` 都是 `RISCVHartArrayState` 的子对象；
+- `mhartid` 是在板级实例化时分配的，而不是在 CPU 型号定义时写死的。
+
+### 这条链路最后说明了什么
+
+把整条链路串起来看，就会更容易理解 QEMU 里“CPU 型号”和“主板使用 CPU 型号”之间的边界：
+
+- `target/riscv/cpu.c` 负责定义 CPU 型号本身；
+- `system/vl.c` 负责把 `-cpu` 解析成内部类型名；
+- `hw/riscv/virt.c` 负责根据 `-smp` / `-numa` 生成 hart 分组；
+- `hw/riscv/riscv_hart.c` 负责把这些分组真正展开成 `RISCVCPU` 实例；
+- `riscv_cpu_init()` 再把该型号的默认配置写入实例。
+
+所以，“在主板中启用一个新 CPU”并不意味着要在 `virt.c` 里为这个 CPU 型号添加专门分支。只要：
+
+- 这个 CPU 型号已经正确注册到 RISC-V QOM 类型系统中；
+- 板级代码允许使用这个 `cpu_type`；
+- 相关扩展和属性都能被正常解析；
+
+那么 `virt`、`spike` 或其他支持动态选择 CPU 类型的机器模型，就可以沿着这条统一流程把它实例化出来。
 
 ![QEMU CPU Model for virt Machine](../../../../image/qemu-cpu-model-for-virt.png)
 
-这个过程也完美体现了 QOM“一次定义，多处使用”的设计哲学。CPU 模型的开发者只需要关注“定义类型”，而平台集成者或最终用户则通过简单的命令行参数“启用类型”。只要类型名正确注册，QEMU 的对象系统就会自动将其集成到任何支持该架构的机器模型中，包括 `virt`、`spike` 或 `sifive_u` 等。
+这个过程体现了 QOM 的一个核心思想：CPU 型号定义一次，机器模型按需复用。模型作者主要负责“定义这个 CPU 是什么”，板级代码主要负责“决定在这个平台上创建多少个这样的 CPU、它们如何编号、如何分组”。
 
 !!! question "随堂测验"
 
     [>> 【点击进入随堂测验】2-3 分钟小测，快速巩固 ☄](https://ima.qq.com/quiz?quizId=35ZeDYUSP4cQgbQwRfwff0ppExoKKq8civQPTydfR1rF)
-
-[1]: https://github.com/plctlab/writing-your-first-riscv-simulator/blob/main/S01E07-CPU-Simulation-Part1-in-Qemu.pdf
