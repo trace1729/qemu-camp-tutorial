@@ -12,7 +12,7 @@
     - 答案中的 **Ref.** 指向讲义内对应章节或群内答疑时间，可按图索骥回到原文。
     - 若问题未收录或已过时，欢迎向 [`gevico/qemu-camp-tutorial`](https://github.com/gevico/qemu-camp-tutorial) 提交 PR 更新本文。
 
-## § 01 环境搭建
+## 环境搭建
 
 !!! question "Q01 · CNB 工作区每次打开都要重下源码？"
 
@@ -65,7 +65,7 @@
 
     **Ref.** `docs/exercise/2026/stage1/index.md#获取实验仓库`
 
-## § 02 OpenCamp 与 Classroom
+## OpenCamp 与 Classroom
 
 !!! question "Q05 · Action 已跑，OpenCamp 为何零分？"
 
@@ -104,7 +104,7 @@
 
     **Ref.** 群内回答（04-10 12:54）
 
-## § 03 专业阶段实验
+## 专业阶段实验
 
 !!! question "Q08 · 四个方向都必须做吗？Rust 呢？"
 
@@ -158,7 +158,7 @@
 
     **Ref.** `docs/exercise/2026/stage1/gpu/gpu-exper-manual.md#测评验收`
 
-## § 04 训练营组织与答疑
+## 训练营组织与答疑
 
 !!! question "Q12 · 训练营的时间线、阶段安排？"
 
