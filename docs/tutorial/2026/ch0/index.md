@@ -60,6 +60,14 @@
 
     [开源社区实践: 参与上游贡献与补丁解读][qemu-unstream-link]
 
+### 答疑速查
+
+!!! question "常见问答"
+
+    [训练营常见问答（FAQ）][qemu-camp-faq-link]
+
+    汇总导学阶段群内高频提问：环境搭建、OpenCamp 与 Classroom、专业阶段实验、训练营组织与答疑。
+
 
 [qemu-cnb-link]: ../../../blogs/misc/qemu-cnb-dev.md
 [learning-c-camp-link]: https://opencamp.ai/C/camp/2025/register?code=cMJBju7dp5cTR
@@ -79,3 +87,4 @@
 [linux-ima-link]: https://ima.qq.com/wiki/?shareId=361fb581e4ddf2c0d7d4e3ba062b66df294e9b13976530804bd75a6c138d58a8
 [risc-sim-link]: https://www.bilibili.com/video/BV12Z4y1c74c
 [qemu-camp-2025-link]: https://www.bilibili.com/video/BV1J84VzsEJg/
+[qemu-camp-faq-link]: qemu-camp-faq.md
