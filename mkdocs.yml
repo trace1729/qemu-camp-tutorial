@@ -96,6 +96,7 @@ nav:
         - a. QEMU 开发环境搭建: tutorial/2026/ch0/qemu-dev-env.md
         - b. GPU 发展历史: tutorial/2026/ch0/gpu-history.md
         - c. GPGPU 学习资料: tutorial/2026/ch0/gpgpu-resources.md
+        - d. 训练营常见问答: tutorial/2026/ch0/qemu-camp-faq.md
       - 2. 基础阶段:
         - 本章导览: tutorial/2026/ch1/index.md
         - a. 虚拟技术历史: tutorial/2026/ch1/vm-history.md
