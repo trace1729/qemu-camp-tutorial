@@ -391,41 +391,47 @@ struct PCIDeviceClass {
 
 首先用 UML 类图展示它们的继承层次与各自的字段：
 
-```mermaid
-classDiagram
-    class ObjectClass {
-        +Type type
-        +const char *class_cast_cache[]
-        +ObjectUnparentFunc unparent
-        +GHashTable *properties
-    }
+```
+          +--------------------------------------+
+          |             ObjectClass              |
+          |--------------------------------------|
+          | + Type                    type       |
+          | + const char *class_cast_cache[]     |
+          | + ObjectUnparentFunc      unparent   |
+          | + GHashTable             *properties |
+          +--------------------------------------+
+                            ^
+                            | 继承（parent_class 作为第一个成员域）
+                            |
+          +--------------------------------------+
+          |             DeviceClass              |
+          |--------------------------------------|
+          | + ObjectClass             parent_class
+          |--------------------------------------|
+          | + DeviceRealize           realize    |
+          | + DeviceUnrealize         unrealize  |
+          | + const Property         *props      |
+          | + bool                    hotpluggable
+          +--------------------------------------+
+                            ^
+                            | 继承（parent_class 作为第一个成员域）
+                            |
+          +--------------------------------------+
+          |            PCIDeviceClass            |
+          |--------------------------------------|
+          | + DeviceClass             parent_class
+          |--------------------------------------|
+          | + PCIDeviceRealize        realize    |
+          | + uint16_t                vendor_id  |
+          | + uint16_t                device_id  |
+          | + uint8_t                 revision   |
+          | + uint16_t                class_id   |
+          | + const char             *romfile    |
+          +--------------------------------------+
 
-    class DeviceClass {
-        +ObjectClass parent_class
-        ---
-        +DeviceRealize realize
-        +DeviceUnrealize unrealize
-        +const Property *props
-        +bool hotpluggable
-    }
-
-    class PCIDeviceClass {
-        +DeviceClass parent_class
-        ---
-        +PCIDeviceRealize realize
-        +uint16_t vendor_id
-        +uint16_t device_id
-        +uint8_t revision
-        +uint16_t class_id
-        +const char *romfile
-    }
-
-    ObjectClass <|-- DeviceClass : parent_class (first field)
-    DeviceClass <|-- PCIDeviceClass : parent_class (first field)
-
-    note for ObjectClass "offset 0x0: all types share this header"
-    note for DeviceClass "offset 0x0: starts with ObjectClass\nthen device-specific fields"
-    note for PCIDeviceClass "offset 0x0: starts with DeviceClass\nthen PCI-specific fields"
+  说明：每一层的 parent_class 都位于子类结构体的 offset 0x0，
+        因此 (ObjectClass *) / (DeviceClass *) / (PCIDeviceClass *)
+        三个指针共享同一起始地址。
 ```
 
 C 语言通过将父类结构体作为子类的**第一个成员域**（offset 0），实现了类似 C++ 的继承内存布局——子类指针可以直接强制转换为父类指针，因为它们在内存起始位置共享相同的布局。下面用内存布局图来直观展示这种包含关系：
@@ -785,4 +791,4 @@ void qdev_init_gpio_out_named(DeviceState *dev, qemu_irq *pins,
 
 !!! question "随堂测验"
 
-    [>> 【点击进入随堂测验】2-3 分钟小测，快速巩固 ☄](hhttps://ima.qq.com/quiz?quizId=1J6CHlpvIscf7N8tJ9n2EvtVJC6EcvYNvRTOsQfZN0R)
+    [>> 【点击进入随堂测验】2-3 分钟小测，快速巩固 ☄](https://ima.qq.com/quiz?quizId=1J6CHlpvIscf7N8tJ9n2EvtVJC6EcvYNvRTOsQfZN0R)
