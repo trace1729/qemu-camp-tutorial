@@ -12,7 +12,6 @@ QEMU 是一款功能强大的开源虚拟化和仿真软件，支持多种处理
 
 本章节将聚焦 QEMU 常用启动参数，以启动 OpenEuler RISC-V 系统为实例，重点讲解主板选型、CPU 配置、设备添加等核心操作，进而介绍如何精准查找适配自身需求的 QEMU 启动参数，抛砖引玉助力读者掌握相关应用方法。
 
-
 !!! tip "概览"
 
     - 启动参数分类与常用选项速查
@@ -46,13 +45,11 @@ QEMU 是一款功能强大的开源虚拟化和仿真软件，支持多种处理
 |  `-append`            | `-append "console=ttyS0"` | 传递给内核的命令行参数（direct Linux boot 场景，通常与 `-kernel` 配合使用） |
 |  `-dtb`               | `-dtb kernel.dtb`         | 传递给内核的 DTB（Device Tree Blob，设备树二进制文件，用于描述硬件拓扑，供内核发现和配置设备）镜像文件 |
 
-
 **存储设备参数**：
 
 |       parameter       |          example          |     Description    |
 |          ---          |           ----            |        ----        |
 |  `-drive`             | `-drive file=image.qcow2,format=qcow2,if=virtio` | 添加块设备（硬盘、光盘等）|
-
 
 **网络参数**：
 
@@ -146,6 +143,75 @@ unxz -k openEuler-24.03-LTS-SP2-riscv64.qcow2.xz
 chmod +x start_vm.sh
 ./start_vm.sh
 ```
+
+启动后等待内核加载完成，出现 `localhost login:` 提示即可登录。
+
+### 登录虚拟机
+
+openEuler RISC-V 镜像的默认登录信息：
+
+| 项目 | 值 |
+|------|------|
+| 用户名 | `root` |
+| 密码 | `openEuler12#$` |
+
+#### 串口直接登录
+
+在当前终端输入用户名和密码即可：
+
+```text
+localhost login: root
+Password:
+
+Welcome to 6.6.0-98.0.0.103.oe2403sp2.riscv64
+
+System information as of time: Fri Jun 13 05:59:56 PM UTC 2025
+
+System load:    2.87
+Memory used:    1.5%
+Swap used:      0.0%
+Usage On:       4%
+IP address:     10.0.2.15
+Users online:   1
+
+[root@localhost ~]#
+```
+
+#### SSH 远程登录
+
+如果启动参数中配置了端口转发（如 `hostfwd=::12055-:22`），可以通过 SSH 登录：
+
+```bash
+ssh -p 12055 root@localhost
+```
+
+首次连接会提示确认主机指纹，输入 `yes` 后输入密码即可：
+
+```text
+The authenticity of host '[localhost]:12055 ([127.0.0.1]:12055)' can't be established.
+ED25519 key fingerprint is SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+```
+
+!!! note
+
+    此处指纹值因镜像和密钥不同而异，首次连接时输入 `yes` 确认即可。
+
+```text
+root@localhost's password:
+
+Welcome to 6.6.0-98.0.0.103.oe2403sp2.riscv64
+
+[root@localhost ~]#
+```
+
+!!! tip "登录后建议"
+
+    首次登录后建议立即修改默认密码：
+
+    ```bash
+    passwd root
+    ```
 
 ## 查阅 QEMU 启动参数
 
