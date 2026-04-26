@@ -155,15 +155,11 @@ Copyright (c) 2003-2025 Fabrice Bellard and the QEMU Project developers
 
 ## 开发工具配置
 
-### 生成 compile_commands.json
+### compile_commands.json
 
-为 IDE 提供代码补全和跳转支持：
+Meson 在 configure 阶段会自动在 `build/` 目录下生成 `compile_commands.json`，无需手动执行额外命令。编译完成后即可直接使用，为 IDE 提供代码补全和跳转支持。
 
-```bash
-ninja -C build compile_commands.json
-```
-
-生成的 `build/compile_commands.json` 可被 VSCode（C/C++ 插件或 clangd）、Vim（coc-clangd）等编辑器识别。
+`build/compile_commands.json` 可被 VSCode（C/C++ 插件或 clangd）、Vim（coc-clangd）等编辑器识别。
 
 ### VSCode 配置
 
